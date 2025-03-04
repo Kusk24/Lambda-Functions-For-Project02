@@ -1,4 +1,6 @@
 const mysql = require('mysql2/promise');
+const Memcached = require('memcached');
+const util = require('util');
 
 const dbConfig = {
   host: 'project02.cbk4kwa002dq.us-east-1.rds.amazonaws.com',
@@ -7,6 +9,14 @@ const dbConfig = {
   database: 'employees'
 };
 
+// Hard-coded memcache endpoint
+const memcacheEndpoint = 'memcachedcache.hcv3pm.cfg.use1.cache.amazonaws.com:11211';
+const memcached = new Memcached(memcacheEndpoint);
+
+// Promisify memcached methods for easier async/await usage
+const getAsync = util.promisify(memcached.get).bind(memcached);
+const setAsync = util.promisify(memcached.set).bind(memcached);
+
 exports.handler = async (event) => {
   let connection;
   try {
@@ -14,9 +24,28 @@ exports.handler = async (event) => {
 
     // Check if we have a path parameter, e.g., /employees/{emp_no}
     const emp_no = event.pathParameters?.emp_no;
-
     let query;
     let params = [];
+    
+    // Define a cache key based on the query type
+    const cacheKey = emp_no ? `employee_${emp_no}` : `top_employees`;
+
+    // Attempt to get the result from memcache
+    let cachedData;
+    try {
+      cachedData = await getAsync(cacheKey);
+    } catch (cacheError) {
+      console.error('Memcache get error:', cacheError);
+    }
+    
+    if (cachedData) {
+      console.log('Cache hit for key:', cacheKey);
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: cachedData // cachedData is assumed to be a JSON string
+      };
+    }
 
     if (emp_no) {
       // Fetch a single employee
@@ -41,12 +70,21 @@ exports.handler = async (event) => {
       `;
     }
 
+    // Execute the SQL query
     const [rows] = await connection.execute(query, params);
+    const responseBody = JSON.stringify(rows);
+
+    // Cache the response for 60 seconds
+    try {
+      await setAsync(cacheKey, responseBody, 60);
+    } catch (cacheError) {
+      console.error('Memcache set error:', cacheError);
+    }
 
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(rows)
+      body: responseBody
     };
   } catch (error) {
     console.error('Error retrieving employees:', error);

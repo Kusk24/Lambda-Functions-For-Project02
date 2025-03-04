@@ -1,4 +1,6 @@
 const mysql = require('mysql2/promise');
+const Memcached = require('memcached');
+const util = require('util');
 
 const dbConfig = {
   host: 'project02.cbk4kwa002dq.us-east-1.rds.amazonaws.com',
@@ -6,6 +8,13 @@ const dbConfig = {
   password: 'Ggwp512512?',
   database: 'employees'
 };
+
+// Hard-coded memcache endpoint
+const memcacheEndpoint = 'memcachedcache.hcv3pm.cfg.use1.cache.amazonaws.com:11211';
+const memcached = new Memcached(memcacheEndpoint);
+
+// Promisify memcached delete method for easier async/await usage
+const delAsync = util.promisify(memcached.del).bind(memcached);
 
 exports.handler = async (event) => {
   let connection;
@@ -36,9 +45,19 @@ exports.handler = async (event) => {
     // 2) Then delete from employees
     const [deleteResult] = await connection.execute(`DELETE FROM employees WHERE emp_no = ?`, [emp_no]);
 
-    // Optionally check how many rows were affected in employees table:
-    // deleteResult.affectedRows indicates if the emp_no existed or not
-    // e.g., if (deleteResult.affectedRows === 0) { /* emp_no not found */ }
+    // Optionally check deleteResult.affectedRows to verify deletion if needed
+
+    // Invalidate cache entries affected by the delete.
+    // Flush the specific employee's cache and the top employees cache.
+    try {
+      const empCacheKey = `employee_${emp_no}`;
+      await delAsync(empCacheKey);
+      console.log(`Flushed cache for key: ${empCacheKey}`);
+      await delAsync('top_employees');
+      console.log('Flushed cache for key: top_employees');
+    } catch (cacheError) {
+      console.error('Memcache delete error:', cacheError);
+    }
 
     return {
       statusCode: 200,

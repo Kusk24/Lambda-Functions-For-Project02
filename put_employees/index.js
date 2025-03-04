@@ -1,4 +1,6 @@
 const mysql = require('mysql2/promise');
+const Memcached = require('memcached');
+const util = require('util');
 
 const dbConfig = {
   host: 'project02.cbk4kwa002dq.us-east-1.rds.amazonaws.com',
@@ -6,6 +8,13 @@ const dbConfig = {
   password: 'Ggwp512512?',
   database: 'employees'
 };
+
+// Hard-coded memcache endpoint
+const memcacheEndpoint = 'memcachedcache.hcv3pm.cfg.use1.cache.amazonaws.com:11211';
+const memcached = new Memcached(memcacheEndpoint);
+
+// Promisify memcached methods for easier async/await usage
+const delAsync = util.promisify(memcached.del).bind(memcached);
 
 exports.handler = async (event) => {
   let connection;
@@ -140,6 +149,18 @@ exports.handler = async (event) => {
           [emp_no, salary]
         );
       }
+    }
+
+    // Invalidate cache entries that might be stale due to the update.
+    // Flush the specific employee's cache and the top employees cache.
+    try {
+      const empCacheKey = `employee_${emp_no}`;
+      await delAsync(empCacheKey);
+      console.log(`Flushed cache for key: ${empCacheKey}`);
+      await delAsync('top_employees');
+      console.log('Flushed cache for key: top_employees');
+    } catch (cacheError) {
+      console.error('Memcache delete error:', cacheError);
     }
 
     return {
