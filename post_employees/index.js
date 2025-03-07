@@ -144,8 +144,8 @@ exports.handler = async (event) => {
 
     // 11) Cache the fresh top employees
     try {
-      await setAsync('top_employees', JSON.stringify(topRows), 300);
-      console.log('Cached new top_employees for 5 minutes (300s).');
+      await setAsync('top_employees', JSON.stringify(topRows), 30);
+      console.log('Cached new top_employees for 5 minutes (30s).');
     } catch (cacheError) {
       console.error('Memcache set error:', cacheError);
     }

@@ -35,6 +35,9 @@ exports.handler = async (event) => {
 
     // Attempt to get the result from memcache
     let cachedData;
+
+    // Set TTL to 30 seconds for all queries
+    const cacheTTL = 30; 
     try {
       console.log(`Attempting to retrieve from cache with key: ${cacheKey}`);
       cachedData = await getAsync(cacheKey);
@@ -81,10 +84,10 @@ exports.handler = async (event) => {
     const [rows] = await connection.execute(query, params);
     const responseBody = JSON.stringify(rows);
 
-    // Cache the response for 60 seconds
+    // Cache the response for 30 seconds
     try {
       console.log(`Caching result for key: ${cacheKey}`);
-      await setAsync(cacheKey, responseBody, 60);
+      await setAsync(cacheKey, responseBody, cacheTTL);
       console.log(`Successfully cached data for key: ${cacheKey}`);
     } catch (cacheError) {
       console.error('Memcache set error:', cacheError);
